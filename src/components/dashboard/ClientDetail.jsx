@@ -1,72 +1,185 @@
 import { useState } from 'react'
-import { ArrowLeft, ChevronRight, ChevronDown, Play, Pause, DollarSign, MousePointerClick, Eye, RefreshCw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowLeft, ChevronRight, ChevronDown, Play, Pause, DollarSign, MousePointerClick, Eye, RefreshCw, Loader2 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import MetricCard from '@/components/shared/MetricCard'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { useAuthStore } from '@/stores/authStore'
+import { meta } from '@/lib/api'
+import { format, subDays } from 'date-fns'
 
-// Mock detailed data (will be replaced by API hooks)
-const MOCK_CHART_DATA = Array.from({ length: 7 }, (_, i) => ({
-  date: `Mar ${22 + i}`,
+// ── Fetch campaigns with insights for a specific account ──
+function useAccountCampaigns(accountId) {
+  const token = useAuthStore.getState().accessToken
+
+  return useQuery({
+    queryKey: ['accountCampaigns', accountId],
+    queryFn: async () => {
+      const res = await meta.get(`${accountId}/campaigns`, {
+        fields: [
+          'id', 'name', 'status', 'objective', 'daily_budget',
+          'insights.date_preset(last_7d){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}',
+        ].join(','),
+        effective_status: '["ACTIVE","PAUSED"]',
+        limit: '50',
+      })
+
+      return (res.data || []).map((c) => {
+        const ins = c.insights?.data?.[0] || {}
+        return {
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          spend: `$${parseFloat(ins.spend || 0).toFixed(2)}`,
+          results: extractResultString(ins),
+          cpr: extractCPRString(ins),
+          frequency: parseFloat(ins.frequency || 0).toFixed(1),
+          adSets: [], // loaded on expand
+        }
+      })
+    },
+    enabled: !!accountId && !!token,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ── Fetch ad sets for a campaign ──
+function useAdSetsForCampaign(campaignId) {
+  const token = useAuthStore.getState().accessToken
+
+  return useQuery({
+    queryKey: ['adSets', campaignId],
+    queryFn: async () => {
+      const res = await meta.get(`${campaignId}/adsets`, {
+        fields: [
+          'id', 'name', 'status', 'daily_budget',
+          'insights.date_preset(last_7d){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}',
+        ].join(','),
+        limit: '50',
+      })
+
+      return (res.data || []).map((as) => {
+        const ins = as.insights?.data?.[0] || {}
+        return {
+          id: as.id,
+          name: as.name,
+          status: as.status,
+          spend: `$${parseFloat(ins.spend || 0).toFixed(2)}`,
+          results: extractResultString(ins),
+          cpr: extractCPRString(ins),
+          frequency: parseFloat(ins.frequency || 0).toFixed(1),
+        }
+      })
+    },
+    enabled: !!campaignId && !!token,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ── Fetch ads for an ad set ──
+function useAdsForAdSet(adSetId) {
+  const token = useAuthStore.getState().accessToken
+
+  return useQuery({
+    queryKey: ['ads', adSetId],
+    queryFn: async () => {
+      const res = await meta.get(`${adSetId}/ads`, {
+        fields: [
+          'id', 'name', 'status',
+          'insights.date_preset(last_7d){spend,impressions,clicks,ctr,actions,cost_per_action_type,frequency}',
+        ].join(','),
+        limit: '50',
+      })
+
+      return (res.data || []).map((ad) => {
+        const ins = ad.insights?.data?.[0] || {}
+        return {
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          spend: `$${parseFloat(ins.spend || 0).toFixed(2)}`,
+          results: extractResultString(ins),
+          cpr: extractCPRString(ins),
+          ctr: ins.ctr ? `${parseFloat(ins.ctr).toFixed(2)}%` : '—',
+        }
+      })
+    },
+    enabled: !!adSetId && !!token,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ── Fetch daily insights for the chart ──
+function useAccountDailyInsights(accountId) {
+  const token = useAuthStore.getState().accessToken
+  const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
+  const until = format(new Date(), 'yyyy-MM-dd')
+
+  return useQuery({
+    queryKey: ['accountDaily', accountId, since, until],
+    queryFn: async () => {
+      const res = await meta.get(`${accountId}/insights`, {
+        fields: 'spend,impressions,clicks,actions,frequency,reach',
+        time_range: JSON.stringify({ since, until }),
+        time_increment: '1',
+        limit: '7',
+      })
+      return (res.data || []).map((day) => ({
+        date: format(new Date(day.date_start), 'MMM dd'),
+        spend: parseFloat(day.spend || 0),
+        clicks: parseInt(day.clicks || 0, 10),
+        impressions: parseInt(day.impressions || 0, 10),
+      }))
+    },
+    enabled: !!accountId && !!token,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ── Helpers ──
+function extractResultString(ins) {
+  if (!ins.actions) return '0'
+  const priority = [
+    { type: 'offsite_conversion.fb_pixel_purchase', label: 'purchases' },
+    { type: 'lead', label: 'leads' },
+    { type: 'link_click', label: 'clicks' },
+    { type: 'landing_page_view', label: 'views' },
+  ]
+  for (const { type, label } of priority) {
+    const found = ins.actions.find((a) => a.action_type === type)
+    if (found) return `${found.value} ${label}`
+  }
+  return '0'
+}
+
+function extractCPRString(ins) {
+  if (!ins.cost_per_action_type) return '—'
+  const priority = ['offsite_conversion.fb_pixel_purchase', 'lead', 'link_click']
+  for (const type of priority) {
+    const found = ins.cost_per_action_type.find((a) => a.action_type === type)
+    if (found) return `$${parseFloat(found.value).toFixed(2)}`
+  }
+  return '—'
+}
+
+// ── Demo data ──
+const DEMO_CHART = Array.from({ length: 7 }, (_, i) => ({
+  date: format(subDays(new Date(), 7 - i), 'MMM dd'),
   spend: Math.floor(Math.random() * 200) + 100,
-  results: Math.floor(Math.random() * 30) + 5,
+  clicks: Math.floor(Math.random() * 100) + 20,
 }))
 
-const MOCK_CAMPAIGNS = [
-  {
-    id: '1',
-    name: 'Weight Loss — Conversions',
-    status: 'ACTIVE',
-    spend: '$2,340',
-    results: '89 leads',
-    cpr: '$26.29',
-    frequency: '2.1',
-    adSets: [
-      {
-        id: 'as1',
-        name: 'Women 25-44 — Health Interests',
-        status: 'ACTIVE',
-        spend: '$1,400',
-        results: '56 leads',
-        cpr: '$25.00',
-        frequency: '1.9',
-        ads: [
-          { id: 'ad1', name: 'Video — Dr. Testimonial', status: 'ACTIVE', spend: '$800', results: '34 leads', cpr: '$23.53', ctr: '2.4%' },
-          { id: 'ad2', name: 'Image — Before/After', status: 'ACTIVE', spend: '$600', results: '22 leads', cpr: '$27.27', ctr: '1.8%' },
-        ],
-      },
-      {
-        id: 'as2',
-        name: 'Men 30-50 — Fitness',
-        status: 'ACTIVE',
-        spend: '$940',
-        results: '33 leads',
-        cpr: '$28.48',
-        frequency: '2.3',
-        ads: [
-          { id: 'ad3', name: 'Video — Gym Transformation', status: 'ACTIVE', spend: '$940', results: '33 leads', cpr: '$28.48', ctr: '1.6%' },
-        ],
-      },
-    ],
-  },
-  {
-    id: '2',
-    name: 'HRT — Awareness',
-    status: 'ACTIVE',
-    spend: '$890',
-    results: '45K reach',
-    cpr: '$0.02',
-    frequency: '1.8',
-    adSets: [],
-  },
+const DEMO_CAMPAIGNS = [
+  { id: '1', name: 'Weight Loss — Conversions', status: 'ACTIVE', spend: '$2,340.00', results: '89 leads', cpr: '$26.29', frequency: '2.1' },
+  { id: '2', name: 'HRT — Awareness', status: 'ACTIVE', spend: '$890.00', results: '45K reach', cpr: '$0.02', frequency: '1.8' },
 ]
 
+// ── Ad Row ──
 function AdRow({ ad }) {
   return (
     <div className="grid grid-cols-[1fr_90px_90px_80px_70px] gap-3 px-4 py-2.5 text-xs items-center hover:bg-white/[0.02]">
       <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded bg-navy-elevated border border-border-glow flex items-center justify-center text-[10px] text-steel">
-          AD
-        </div>
+        <div className="w-8 h-8 rounded bg-navy-elevated border border-border-glow flex items-center justify-center text-[10px] text-steel">AD</div>
         <span className="text-steel">{ad.name}</span>
       </div>
       <span className="text-white text-right">{ad.spend}</span>
@@ -77,8 +190,10 @@ function AdRow({ ad }) {
   )
 }
 
+// ── AdSet Row (expandable → ads) ──
 function AdSetRow({ adSet }) {
   const [expanded, setExpanded] = useState(false)
+  const { data: ads, isLoading } = useAdsForAdSet(expanded ? adSet.id : null)
 
   return (
     <div>
@@ -87,11 +202,7 @@ function AdSetRow({ adSet }) {
         className="w-full grid grid-cols-[1fr_90px_90px_80px_70px] gap-3 px-4 py-3 text-sm items-center hover:bg-white/[0.02] transition-colors text-left"
       >
         <div className="flex items-center gap-2">
-          {adSet.ads?.length > 0 ? (
-            <ChevronRight size={14} className={cn('text-steel/40 transition-transform', expanded && 'rotate-90')} />
-          ) : (
-            <span className="w-3.5" />
-          )}
+          <ChevronRight size={14} className={cn('text-steel/40 transition-transform', expanded && 'rotate-90')} />
           <span className="text-white">{adSet.name}</span>
         </div>
         <span className="text-white text-right">{adSet.spend}</span>
@@ -105,19 +216,27 @@ function AdSetRow({ adSet }) {
           {adSet.frequency}
         </span>
       </button>
-      {expanded && adSet.ads?.length > 0 && (
+      {expanded && (
         <div className="ml-6 border-l border-border-glow/30">
-          {adSet.ads.map((ad) => (
-            <AdRow key={ad.id} ad={ad} />
-          ))}
+          {isLoading ? (
+            <div className="px-4 py-3 text-xs text-steel flex items-center gap-2">
+              <Loader2 size={12} className="animate-spin" /> Loading ads...
+            </div>
+          ) : ads?.length > 0 ? (
+            ads.map((ad) => <AdRow key={ad.id} ad={ad} />)
+          ) : (
+            <div className="px-4 py-3 text-xs text-steel/40">No ads in this ad set</div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
+// ── Campaign Row (expandable → adsets) ──
 function CampaignRow({ campaign }) {
   const [expanded, setExpanded] = useState(false)
+  const { data: adSets, isLoading } = useAdSetsForCampaign(expanded ? campaign.id : null)
 
   return (
     <div className="border-b border-border-glow/30">
@@ -147,7 +266,7 @@ function CampaignRow({ campaign }) {
           {campaign.frequency}
         </span>
       </button>
-      {expanded && campaign.adSets?.length > 0 && (
+      {expanded && (
         <div className="bg-navy/20">
           <div className="grid grid-cols-[1fr_90px_90px_80px_70px] gap-3 px-5 py-2 text-[10px] font-mono uppercase tracking-wider text-steel/40 border-b border-border-glow/20">
             <span className="pl-9">Ad Set</span>
@@ -156,15 +275,22 @@ function CampaignRow({ campaign }) {
             <span className="text-right">CPR</span>
             <span className="text-right">Freq</span>
           </div>
-          {campaign.adSets.map((adSet) => (
-            <AdSetRow key={adSet.id} adSet={adSet} />
-          ))}
+          {isLoading ? (
+            <div className="px-5 py-4 text-sm text-steel flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" /> Loading ad sets...
+            </div>
+          ) : adSets?.length > 0 ? (
+            adSets.map((adSet) => <AdSetRow key={adSet.id} adSet={adSet} />)
+          ) : (
+            <div className="px-5 py-4 text-sm text-steel/40">No ad sets in this campaign</div>
+          )}
         </div>
       )}
     </div>
   )
 }
 
+// ── Chart Tooltip ──
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
@@ -180,48 +306,63 @@ const CustomTooltip = ({ active, payload, label }) => {
   )
 }
 
+// ── Main ClientDetail Component ──
 export default function ClientDetail({ client, onBack }) {
+  const hasToken = !!useAuthStore.getState().accessToken
+  const { data: campaigns, isLoading: campaignsLoading } = useAccountCampaigns(hasToken ? client.id : null)
+  const { data: chartData, isLoading: chartLoading } = useAccountDailyInsights(hasToken ? client.id : null)
+
+  const displayCampaigns = hasToken && campaigns ? campaigns : DEMO_CAMPAIGNS
+  const displayChart = hasToken && chartData?.length > 0 ? chartData : DEMO_CHART
+
+  const summary = client.summary || {}
+
   return (
     <div className="space-y-6 animate-fade-up">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button
-          onClick={onBack}
-          className="p-2 rounded-lg hover:bg-white/5 transition-colors"
-        >
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-white/5 transition-colors">
           <ArrowLeft size={20} className="text-steel" />
         </button>
         <div>
           <h2 className="text-2xl font-bold text-white">{client.name}</h2>
-          <p className="text-sm text-steel">Account details and campaign performance</p>
+          <p className="text-sm text-steel">
+            {hasToken ? 'Live data from Meta Marketing API' : 'Demo data — log in for real metrics'}
+          </p>
         </div>
       </div>
 
       {/* Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard label="Spend" value={client.spend} change={8.2} icon={DollarSign} />
-        <MetricCard label="Results" value={client.results} change={12.5} icon={MousePointerClick} />
-        <MetricCard label="ROAS" value={client.roas} change={-2.1} icon={RefreshCw} />
-        <MetricCard label="Reach" value="24.5K" change={5.0} icon={Eye} />
+        <MetricCard label="Spend" value={summary.totalSpend ? `$${summary.totalSpend.toFixed(2)}` : '—'} icon={DollarSign} />
+        <MetricCard label="Results" value={summary.totalResults?.toString() || '—'} icon={MousePointerClick} />
+        <MetricCard label="Avg Frequency" value={summary.avgFrequency?.toString() || '—'} icon={RefreshCw} />
+        <MetricCard label="Reach" value={summary.totalReach ? `${(summary.totalReach / 1000).toFixed(1)}K` : '—'} icon={Eye} />
       </div>
 
       {/* Chart */}
       <div className="bg-navy-light/40 border border-border-glow rounded-xl p-5">
-        <h3 className="text-sm font-mono uppercase tracking-wider text-steel mb-4">Daily Performance</h3>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={MOCK_CHART_DATA}>
-            <defs>
-              <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#00ff85" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="#00ff85" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="date" tick={{ fill: '#98b9ce', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#98b9ce', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
-            <Tooltip content={<CustomTooltip />} />
-            <Area type="monotone" dataKey="spend" stroke="#00ff85" fill="url(#spendGrad)" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <h3 className="text-sm font-mono uppercase tracking-wider text-steel mb-4">Daily Performance (Last 7 Days)</h3>
+        {chartLoading && hasToken ? (
+          <div className="flex items-center justify-center py-12 text-steel text-sm">
+            <Loader2 size={16} className="animate-spin mr-2" /> Loading chart...
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={displayChart}>
+              <defs>
+                <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#00ff85" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#00ff85" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" tick={{ fill: '#98b9ce', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#98b9ce', fontSize: 11 }} axisLine={false} tickLine={false} width={40} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="spend" stroke="#00ff85" fill="url(#spendGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Campaigns table */}
@@ -236,9 +377,15 @@ export default function ClientDetail({ client, onBack }) {
           <span className="text-right">CPR</span>
           <span className="text-right">Freq</span>
         </div>
-        {MOCK_CAMPAIGNS.map((campaign) => (
-          <CampaignRow key={campaign.id} campaign={campaign} />
-        ))}
+        {campaignsLoading && hasToken ? (
+          <div className="px-5 py-8 text-center text-steel text-sm flex items-center justify-center gap-2">
+            <Loader2 size={16} className="animate-spin" /> Loading campaigns...
+          </div>
+        ) : (
+          displayCampaigns.map((campaign) => (
+            <CampaignRow key={campaign.id} campaign={campaign} />
+          ))
+        )}
       </div>
     </div>
   )

@@ -1,19 +1,105 @@
 import { useState } from 'react'
-import { DollarSign, Target, TrendingUp, Users } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { DollarSign, Target, TrendingUp, Users, Loader2 } from 'lucide-react'
 import MetricCard from '@/components/shared/MetricCard'
 import StatusDot from '@/components/shared/StatusDot'
 import ClientDetail from '@/components/dashboard/ClientDetail'
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/stores/appStore'
+import { useAuthStore } from '@/stores/authStore'
+import { meta } from '@/lib/api'
+import { format, subDays } from 'date-fns'
 
-// Mock client data — will be replaced by real API data when connected
-const MOCK_CLIENTS = [
-  { id: '1', name: 'NuHealth', campaigns: 5, spend: '$4,230', results: '142 leads', roas: '3.2x', status: 'ok', trend: [30, 45, 42, 55, 60, 58, 65] },
-  { id: '2', name: 'Acme Corp', campaigns: 3, spend: '$1,850', results: '89 purchases', roas: '2.8x', status: 'warning', trend: [50, 48, 45, 40, 38, 42, 35] },
-  { id: '3', name: 'Kosovo Travel', campaigns: 2, spend: '$920', results: '2.1K clicks', roas: '1.5x', status: 'ok', trend: [20, 25, 30, 35, 40, 38, 42] },
-  { id: '4', name: 'Prishtina Eats', campaigns: 4, spend: '$3,100', results: '67 orders', roas: '4.1x', status: 'critical', trend: [60, 55, 50, 45, 40, 35, 30] },
-]
+// ── Fetch campaigns + account insights for a single ad account ──
+function useAccountSummary(accountId) {
+  const token = useAuthStore.getState().accessToken
+  const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
+  const until = format(new Date(), 'yyyy-MM-dd')
 
+  return useQuery({
+    queryKey: ['accountSummary', accountId, since, until],
+    queryFn: async () => {
+      // Fetch campaigns and insights in parallel
+      const [campaignsRes, insightsRes] = await Promise.all([
+        meta.get(`${accountId}/campaigns`, {
+          fields: 'id,name,status,objective',
+          effective_status: '["ACTIVE","PAUSED"]',
+          limit: '100',
+        }),
+        meta.get(`${accountId}/insights`, {
+          fields: 'spend,impressions,clicks,actions,cost_per_action_type,frequency,reach,ctr,cpc',
+          time_range: JSON.stringify({ since, until }),
+          time_increment: '1',
+          limit: '7',
+        }),
+      ])
+
+      const campaigns = campaignsRes.data || []
+      const dailyInsights = insightsRes.data || []
+
+      // Aggregate totals
+      let totalSpend = 0
+      let totalResults = 0
+      let totalReach = 0
+      const spendTrend = []
+
+      dailyInsights.forEach((day) => {
+        const spend = parseFloat(day.spend || 0)
+        totalSpend += spend
+        totalReach += parseInt(day.reach || 0, 10)
+        spendTrend.push(spend)
+
+        // Extract results (purchases > leads > link_clicks)
+        if (day.actions) {
+          const priority = ['offsite_conversion.fb_pixel_purchase', 'lead', 'link_click', 'landing_page_view']
+          for (const actionType of priority) {
+            const found = day.actions.find((a) => a.action_type === actionType)
+            if (found) {
+              totalResults += parseInt(found.value, 10)
+              break
+            }
+          }
+        }
+      })
+
+      const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length
+      const avgFrequency = dailyInsights.length > 0
+        ? dailyInsights.reduce((sum, d) => sum + parseFloat(d.frequency || 0), 0) / dailyInsights.length
+        : 0
+
+      // Determine health status
+      let status = 'ok'
+      if (avgFrequency > 4) status = 'critical'
+      else if (avgFrequency > 3) status = 'warning'
+
+      return {
+        totalSpend,
+        totalResults,
+        totalReach,
+        activeCampaigns,
+        totalCampaigns: campaigns.length,
+        avgFrequency,
+        status,
+        spendTrend: spendTrend.length > 0 ? spendTrend : [0],
+      }
+    },
+    enabled: !!accountId && !!token,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ── Helpers ──
+function formatMoney(val) {
+  if (val >= 1000) return `$${(val / 1000).toFixed(1)}K`
+  return `$${val.toFixed(0)}`
+}
+
+function formatNum(val) {
+  if (val >= 1000) return `${(val / 1000).toFixed(1)}K`
+  return val.toString()
+}
+
+// ── Mini Sparkline ──
 function MiniSparkline({ data, color = '#00ff85' }) {
   const max = Math.max(...data)
   const min = Math.min(...data)
@@ -24,7 +110,7 @@ function MiniSparkline({ data, color = '#00ff85' }) {
 
   const points = data
     .map((v, i) => {
-      const x = (i / (data.length - 1)) * width
+      const x = (i / (data.length - 1 || 1)) * width
       const y = height - ((v - min) / range) * height
       return `${x},${y}`
     })
@@ -53,60 +139,80 @@ function MiniSparkline({ data, color = '#00ff85' }) {
   )
 }
 
-function ClientCard({ client, onClick }) {
+// ── Client Card (real data) ──
+function ClientCard({ account, onClick }) {
+  const { data, isLoading } = useAccountSummary(account.id)
+  const hasToken = !!useAuthStore.getState().accessToken
+
+  // If no token (demo mode), show demo data
+  const summary = (!hasToken || !data) ? {
+    totalSpend: Math.random() * 5000 + 500,
+    totalResults: Math.floor(Math.random() * 200) + 20,
+    activeCampaigns: Math.floor(Math.random() * 5) + 1,
+    totalCampaigns: Math.floor(Math.random() * 8) + 2,
+    status: ['ok', 'ok', 'warning', 'critical'][Math.floor(Math.random() * 4)],
+    spendTrend: Array.from({ length: 7 }, () => Math.random() * 100 + 20),
+    avgFrequency: (Math.random() * 3 + 1).toFixed(1),
+  } : data
+
+  const statusColor = summary.status === 'critical' ? '#ef4444' : summary.status === 'warning' ? '#f59e0b' : '#00ff85'
+
   return (
     <button
-      onClick={onClick}
+      onClick={() => onClick({ ...account, summary })}
       className="bg-navy-light/60 border border-border-glow rounded-xl p-5 text-left hover:border-border-hover transition-all duration-150 hover:shadow-[0_0_30px_rgba(0,255,133,0.06)] group w-full"
     >
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <StatusDot status={client.status} />
+            <StatusDot status={summary.status} />
             <h3 className="text-lg font-bold text-white group-hover:text-neon transition-colors">
-              {client.name}
+              {account.name}
             </h3>
           </div>
           <p className="text-xs font-mono text-steel">
-            {client.campaigns} active campaign{client.campaigns !== 1 ? 's' : ''}
+            {isLoading && hasToken ? (
+              <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Loading...</span>
+            ) : (
+              `${summary.activeCampaigns || summary.totalCampaigns} active campaign${(summary.activeCampaigns || summary.totalCampaigns) !== 1 ? 's' : ''}`
+            )}
           </p>
         </div>
-        <MiniSparkline
-          data={client.trend}
-          color={client.status === 'critical' ? '#ef4444' : client.status === 'warning' ? '#f59e0b' : '#00ff85'}
-        />
+        <MiniSparkline data={summary.spendTrend} color={statusColor} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <div>
           <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">Spend</div>
-          <div className="text-sm font-semibold text-white">{client.spend}</div>
+          <div className="text-sm font-semibold text-white">
+            {isLoading && hasToken ? '...' : formatMoney(summary.totalSpend)}
+          </div>
         </div>
         <div>
           <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">Results</div>
-          <div className="text-sm font-semibold text-white">{client.results}</div>
+          <div className="text-sm font-semibold text-white">
+            {isLoading && hasToken ? '...' : formatNum(summary.totalResults)}
+          </div>
         </div>
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">ROAS</div>
-          <div className="text-sm font-semibold text-neon">{client.roas}</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">Freq</div>
+          <div className={cn(
+            'text-sm font-semibold',
+            parseFloat(summary.avgFrequency) > 4 ? 'text-red-400' :
+            parseFloat(summary.avgFrequency) > 3 ? 'text-amber-400' : 'text-neon'
+          )}>
+            {isLoading && hasToken ? '...' : summary.avgFrequency}
+          </div>
         </div>
       </div>
     </button>
   )
 }
 
+// ── Dashboard Page ──
 export default function Dashboard() {
   const [selectedClient, setSelectedClient] = useState(null)
   const { accounts } = useAppStore()
-
-  // Use real accounts if available, fallback to mock
-  const clients = accounts.length > 0
-    ? accounts.map((acc, i) => ({
-        ...MOCK_CLIENTS[i % MOCK_CLIENTS.length],
-        id: acc.id,
-        name: acc.name,
-      }))
-    : MOCK_CLIENTS
 
   if (selectedClient) {
     return (
@@ -117,33 +223,36 @@ export default function Dashboard() {
     )
   }
 
+  // Compute summary totals from visible accounts
+  const totalAccounts = accounts.length
+
   return (
     <div className="space-y-6">
       {/* Page header */}
       <div>
         <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-        <p className="text-sm text-steel mt-1">Overview of all client accounts</p>
+        <p className="text-sm text-steel mt-1">Overview of all ad accounts — click any card to drill down</p>
       </div>
 
       {/* Summary metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard label="Total Spend" value="$10,100" change={12.5} icon={DollarSign} />
-        <MetricCard label="Total Results" value="2,298" change={8.3} icon={Target} />
-        <MetricCard label="Avg ROAS" value="2.9x" change={-3.2} icon={TrendingUp} />
-        <MetricCard label="Active Campaigns" value="14" change={0} icon={Users} />
+        <MetricCard label="Ad Accounts" value={totalAccounts.toString()} icon={Users} />
+        <MetricCard label="Period" value="Last 7 days" icon={TrendingUp} />
+        <MetricCard label="Data Source" value="Meta API" icon={Target} />
+        <MetricCard label="Status" value="Live" icon={DollarSign} />
       </div>
 
       {/* Client grid */}
       <div>
         <h3 className="text-sm font-mono uppercase tracking-wider text-steel mb-4">
-          Client Accounts
+          Ad Accounts
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {clients.map((client) => (
+          {accounts.map((account) => (
             <ClientCard
-              key={client.id}
-              client={client}
-              onClick={() => setSelectedClient(client)}
+              key={account.id}
+              account={account}
+              onClick={setSelectedClient}
             />
           ))}
         </div>
