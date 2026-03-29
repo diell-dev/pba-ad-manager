@@ -76,7 +76,7 @@ function useAccountSummary(accountId) {
         totalReach,
         activeCampaigns,
         totalCampaigns: campaigns.length,
-        avgFrequency,
+        avgFrequency: avgFrequency.toFixed(1),
         status,
         spendTrend: spendTrend.length > 0 ? spendTrend : [0],
       }
