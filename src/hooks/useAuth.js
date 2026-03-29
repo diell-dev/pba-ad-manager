@@ -43,6 +43,13 @@ export function useAuth() {
     }
   }
 
+  async function loginDemo() {
+    setLoading(true)
+    setError(null)
+    // Demo mode — no real token, just authenticate with mock data
+    setAuthenticated({ name: 'Demo User' }, null)
+  }
+
   async function logout() {
     try {
       await auth.logout()
@@ -79,5 +86,5 @@ export function useAuth() {
     }
   }
 
-  return { isAuthenticated, isLoading, user, error, login, logout }
+  return { isAuthenticated, isLoading, user, error, login, loginDemo, logout }
 }

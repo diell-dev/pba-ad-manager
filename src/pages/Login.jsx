@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { LogIn, AlertCircle } from 'lucide-react'
+import { LogIn, Play, AlertCircle } from 'lucide-react'
 import ParticleBackground from '@/components/shared/ParticleBackground'
 
-export default function Login({ onLogin, error, loading }) {
+export default function Login({ onLogin, onDemoLogin, error, loading }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
@@ -90,6 +90,24 @@ export default function Login({ onLogin, error, loading }) {
                   Sign In
                 </>
               )}
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 my-2">
+              <div className="flex-1 h-px bg-border-glow" />
+              <span className="text-[10px] font-mono uppercase tracking-wider text-steel/40">or</span>
+              <div className="flex-1 h-px bg-border-glow" />
+            </div>
+
+            {/* Demo login */}
+            <button
+              type="button"
+              onClick={onDemoLogin}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-transparent border border-neon/20 text-neon font-semibold rounded-xl px-4 py-3 hover:bg-neon/5 hover:border-neon/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+            >
+              <Play size={14} />
+              Enter Demo Mode
             </button>
           </form>
 

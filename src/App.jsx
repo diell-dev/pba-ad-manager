@@ -22,7 +22,7 @@ const queryClient = new QueryClient({
 })
 
 function AuthGate() {
-  const { isAuthenticated, isLoading, error, login } = useAuth()
+  const { isAuthenticated, isLoading, error, login, loginDemo } = useAuth()
 
   // Loading state
   if (isLoading) {
@@ -40,7 +40,7 @@ function AuthGate() {
 
   // Not authenticated — show login
   if (!isAuthenticated) {
-    return <Login onLogin={login} error={error} loading={isLoading} />
+    return <Login onLogin={login} onDemoLogin={loginDemo} error={error} loading={isLoading} />
   }
 
   // Authenticated — show app
