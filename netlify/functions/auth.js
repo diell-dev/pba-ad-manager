@@ -1,7 +1,10 @@
 import CryptoJS from 'crypto-js';
 
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+// Encrypted Facebook token (AES encrypted with admin password)
+const ENCRYPTED_TOKEN = 'U2FsdGVkX18u7/8gViMEU6+x2sg4GAt2rNqxZxeEF5Y5NDZ3cBd8RVKvkWyeGb5P5QQVy26axzWfkgECITOB0UwKDc9d+7t+aRi3aR2fjXJtzwQaoJO+RK8jBUBHNSIN7BNu/o9ozEojvUS1FhOWG/nyAUKC3vUrUQ9FWzbYsCWJo814YPWcYrMWPMCpnoFmOWZ5t5jrYxSJnkfbsCxc7NG7lmRtz4ssE8DDeAvlDwYbcuNi/877iApIhjlrDrLqCRifkN+5IHOH8WFPuW2yPqDg+SGanRpEaGCuIO8BfAI=';
 
+// CORS headers
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -45,7 +48,7 @@ export const handler = async (event) => {
 
     const { action, username, password } = body;
 
-    // ── Check session (stateless — always returns not authenticated) ──
+    // ── Session check (stateless — no session to check) ──
     if (action === 'check') {
       return {
         statusCode: 401,
@@ -54,7 +57,7 @@ export const handler = async (event) => {
       };
     }
 
-    // ── Logout (no-op, client handles token removal) ──
+    // ── Logout (no-op) ──
     if (action === 'logout') {
       return {
         statusCode: 200,
@@ -72,7 +75,6 @@ export const handler = async (event) => {
       };
     }
 
-    // Only allow "Admin" username
     if (username !== 'Admin') {
       return {
         statusCode: 401,
@@ -81,27 +83,21 @@ export const handler = async (event) => {
       };
     }
 
-    // Encrypted token — use password as decryption key
-    const encryptedToken = process.env.ENCRYPTED_FB_TOKEN;
-    if (!encryptedToken) {
+    // Decrypt token using password as key
+    let decryptedToken;
+    try {
+      const decrypted = CryptoJS.AES.decrypt(ENCRYPTED_TOKEN, password);
+      decryptedToken = decrypted.toString(CryptoJS.enc.Utf8);
+    } catch (e) {
       return {
-        statusCode: 500,
+        statusCode: 401,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Server configuration error: ENCRYPTED_FB_TOKEN not set' })
+        body: JSON.stringify({ error: 'Invalid credentials' })
       };
     }
 
-    let accessToken;
-    try {
-      // Decrypt using password as key
-      const decrypted = CryptoJS.AES.decrypt(encryptedToken, password);
-      accessToken = decrypted.toString(CryptoJS.enc.Utf8);
-
-      // Validate token format — Facebook tokens start with "EA"
-      if (!accessToken || !accessToken.startsWith('EA')) {
-        throw new Error('Invalid token format after decryption');
-      }
-    } catch (e) {
+    // Validate that decrypted token starts with "EA" (Facebook token format)
+    if (!decryptedToken || !decryptedToken.startsWith('EA')) {
       return {
         statusCode: 401,
         headers: corsHeaders,
@@ -113,9 +109,9 @@ export const handler = async (event) => {
       statusCode: 200,
       headers: corsHeaders,
       body: JSON.stringify({
-        accessToken,
+        accessToken: decryptedToken,
         user: { name: username },
-        message: 'Token retrieved successfully. Store in memory only.'
+        message: 'Login successful'
       })
     };
 
