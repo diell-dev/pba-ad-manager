@@ -1,36 +1,125 @@
-import { Bell, CheckCircle2, AlertTriangle, AlertOctagon, ChevronRight } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Bell, CheckCircle2, AlertTriangle, AlertOctagon, ChevronRight, Loader2 } from 'lucide-react'
 import StatusDot from '@/components/shared/StatusDot'
 import { cn } from '@/utils/cn'
+import { useAppStore } from '@/stores/appStore'
+import { meta } from '@/lib/api'
+import { DEFAULT_THRESHOLDS } from '@/utils/constants'
 
-const MOCK_NOTIFICATIONS = [
-  {
-    client: 'NuHealth',
-    status: 'ok',
-    alerts: [],
-  },
-  {
-    client: 'Acme Corp',
-    status: 'warning',
-    alerts: [
-      { severity: 'warning', campaign: 'Q1 Promo', message: 'Frequency at 3.4 — approaching fatigue threshold', metric: 'Frequency: 3.4' },
-      { severity: 'warning', campaign: 'Q1 Promo', message: 'CTR dropped 28% vs last 7-day average', metric: 'CTR: 0.8%' },
-    ],
-  },
-  {
-    client: 'Kosovo Travel',
-    status: 'ok',
-    alerts: [],
-  },
-  {
-    client: 'Prishtina Eats',
-    status: 'critical',
-    alerts: [
-      { severity: 'critical', campaign: 'Weekend Orders', message: 'Frequency at 5.2 — creative fatigue detected', metric: 'Frequency: 5.2' },
-      { severity: 'warning', campaign: 'Weekend Orders', message: 'Cost per order spiked 45% above 7-day average', metric: 'CPR: $20.90' },
-      { severity: 'warning', campaign: 'Delivery Campaign', message: 'Underspending — only 38% of daily budget used', metric: 'Pacing: 38%' },
-    ],
-  },
-]
+// ── Fetch all accounts' active campaigns with insights ──
+function useAccountAlerts(accounts) {
+  return useQuery({
+    queryKey: ['notifications', accounts.map((a) => a.id).join(',')],
+    queryFn: async () => {
+      const results = []
+
+      for (const account of accounts) {
+        try {
+          const res = await meta.get(`${account.id}/campaigns`, {
+            fields: [
+              'id', 'name', 'status', 'daily_budget',
+              'insights.date_preset(last_7d){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach,ctr}',
+            ].join(','),
+            effective_status: '["ACTIVE"]',
+            limit: '50',
+          })
+
+          const campaigns = res.data || []
+          const alerts = []
+
+          for (const campaign of campaigns) {
+            const ins = campaign.insights?.data?.[0]
+            if (!ins) continue
+
+            const freq = parseFloat(ins.frequency || 0)
+            const ctr = parseFloat(ins.ctr || 0)
+            const spend = parseFloat(ins.spend || 0)
+            const dailyBudget = campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : 0
+
+            // Frequency alerts
+            if (freq >= DEFAULT_THRESHOLDS.frequency.critical) {
+              alerts.push({
+                severity: 'critical',
+                campaign: campaign.name,
+                message: `Frequency at ${freq.toFixed(1)} — creative fatigue detected`,
+                metric: `Frequency: ${freq.toFixed(1)}`,
+              })
+            } else if (freq >= DEFAULT_THRESHOLDS.frequency.warning) {
+              alerts.push({
+                severity: 'warning',
+                campaign: campaign.name,
+                message: `Frequency at ${freq.toFixed(1)} — approaching fatigue threshold`,
+                metric: `Frequency: ${freq.toFixed(1)}`,
+              })
+            }
+
+            // Low CTR alert (below 1% for active campaigns with spend)
+            if (spend > 0 && ctr > 0 && ctr < 1) {
+              alerts.push({
+                severity: 'warning',
+                campaign: campaign.name,
+                message: `Low CTR at ${ctr.toFixed(2)}% — consider refreshing creative`,
+                metric: `CTR: ${ctr.toFixed(2)}%`,
+              })
+            }
+
+            // Underspend alert
+            if (dailyBudget > 0 && spend > 0) {
+              const pacingPct = (spend / (dailyBudget * 7)) * 100
+              if (pacingPct < DEFAULT_THRESHOLDS.underspend.critical) {
+                alerts.push({
+                  severity: 'critical',
+                  campaign: campaign.name,
+                  message: `Underspending — only ${pacingPct.toFixed(0)}% of budget used over 7 days`,
+                  metric: `Pacing: ${pacingPct.toFixed(0)}%`,
+                })
+              }
+            }
+
+            // High CPR alert
+            const actions = ins.actions || []
+            const costPerAction = ins.cost_per_action_type || []
+            const primaryAction = costPerAction.find(
+              (a) => a.action_type === 'offsite_conversion.fb_pixel_purchase' || a.action_type === 'lead' || a.action_type === 'link_click'
+            )
+            if (primaryAction && parseFloat(primaryAction.value) > 15) {
+              alerts.push({
+                severity: 'warning',
+                campaign: campaign.name,
+                message: `High cost per result at $${parseFloat(primaryAction.value).toFixed(2)}`,
+                metric: `CPR: $${parseFloat(primaryAction.value).toFixed(2)}`,
+              })
+            }
+          }
+
+          // Determine account status
+          const hasCritical = alerts.some((a) => a.severity === 'critical')
+          const hasWarning = alerts.some((a) => a.severity === 'warning')
+          const status = hasCritical ? 'critical' : hasWarning ? 'warning' : 'ok'
+
+          results.push({
+            client: account.name,
+            accountId: account.id,
+            status,
+            alerts,
+          })
+        } catch (err) {
+          // If fetch fails for an account, mark as ok with no alerts
+          results.push({
+            client: account.name,
+            accountId: account.id,
+            status: 'ok',
+            alerts: [],
+          })
+        }
+      }
+
+      return results
+    },
+    enabled: accounts.length > 0,
+    staleTime: 3 * 60 * 1000,
+  })
+}
 
 function AlertRow({ alert }) {
   const isCritical = alert.severity === 'critical'
@@ -99,10 +188,19 @@ function ClientNotification({ notification }) {
 }
 
 export default function Notifications() {
-  const sorted = [...MOCK_NOTIFICATIONS].sort((a, b) => {
-    const order = { critical: 0, warning: 1, ok: 2 }
-    return (order[a.status] ?? 2) - (order[b.status] ?? 2)
-  })
+  const accounts = useAppStore((s) => s.accounts)
+  const { data: notifications, isLoading } = useAccountAlerts(accounts)
+
+  const sorted = notifications
+    ? [...notifications].sort((a, b) => {
+        const order = { critical: 0, warning: 1, ok: 2 }
+        return (order[a.status] ?? 2) - (order[b.status] ?? 2)
+      })
+    : []
+
+  const criticalCount = sorted.filter((n) => n.status === 'critical').length
+  const warningCount = sorted.filter((n) => n.status === 'warning').length
+  const okCount = sorted.filter((n) => n.status === 'ok').length
 
   return (
     <div className="space-y-6">
@@ -112,34 +210,53 @@ export default function Notifications() {
         <p className="text-sm text-steel mt-1">Campaign health monitoring across all clients</p>
       </div>
 
-      {/* Summary bar */}
-      <div className="flex gap-4">
-        {['critical', 'warning', 'ok'].map((status) => {
-          const count = MOCK_NOTIFICATIONS.filter((n) => n.status === status).length
-          return (
-            <div
-              key={status}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-lg border',
-                status === 'critical' ? 'border-red-500/20 bg-red-500/5' :
-                status === 'warning' ? 'border-amber-400/20 bg-amber-400/5' :
-                'border-emerald-400/20 bg-emerald-400/5'
-              )}
-            >
-              <StatusDot status={status} />
-              <span className="text-sm font-medium text-white">{count}</span>
-              <span className="text-xs text-steel capitalize">{status}</span>
-            </div>
-          )
-        })}
-      </div>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-steel text-sm">
+          <Loader2 size={20} className="animate-spin mr-3" />
+          Scanning campaigns for alerts...
+        </div>
+      ) : (
+        <>
+          {/* Summary bar */}
+          <div className="flex gap-4">
+            {[
+              { status: 'critical', count: criticalCount },
+              { status: 'warning', count: warningCount },
+              { status: 'ok', count: okCount },
+            ].map(({ status, count }) => (
+              <div
+                key={status}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg border',
+                  status === 'critical' ? 'border-red-500/20 bg-red-500/5' :
+                  status === 'warning' ? 'border-amber-400/20 bg-amber-400/5' :
+                  'border-emerald-400/20 bg-emerald-400/5'
+                )}
+              >
+                <StatusDot status={status} />
+                <span className="text-sm font-medium text-white">{count}</span>
+                <span className="text-xs text-steel capitalize">
+                  {status === 'ok' ? 'Ok' : status === 'critical' ? 'Critical' : 'Warning'}
+                </span>
+              </div>
+            ))}
+          </div>
 
-      {/* Client notifications */}
-      <div className="space-y-4">
-        {sorted.map((notification) => (
-          <ClientNotification key={notification.client} notification={notification} />
-        ))}
-      </div>
+          {/* Client notifications */}
+          {sorted.length === 0 ? (
+            <div className="text-center py-16">
+              <CheckCircle2 size={40} className="text-emerald-400 mx-auto mb-3 opacity-60" />
+              <p className="text-steel">No ad accounts loaded yet. Go to Dashboard first.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {sorted.map((notification) => (
+                <ClientNotification key={notification.accountId} notification={notification} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

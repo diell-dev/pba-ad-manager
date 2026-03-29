@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Shell from '@/components/layout/Shell'
 import ParticleBackground from '@/components/shared/ParticleBackground'
+import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import Dashboard from '@/pages/Dashboard'
 import Edit from '@/pages/Edit'
 import Campaigns from '@/pages/Campaigns'
@@ -47,16 +48,18 @@ function AuthGate() {
   return (
     <>
       <ParticleBackground intensity="subtle" />
-      <Routes>
-        <Route element={<Shell />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/edit" element={<Edit />} />
-          <Route path="/campaigns" element={<Campaigns />} />
-          <Route path="/create" element={<Create />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary onReset={() => window.location.href = '/'}>
+        <Routes>
+          <Route element={<Shell />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/edit" element={<Edit />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/create" element={<Create />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
     </>
   )
 }

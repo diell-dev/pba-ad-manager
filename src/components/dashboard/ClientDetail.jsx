@@ -107,7 +107,6 @@ function useAdsForAdSet(adSetId) {
 
 // ── Fetch daily insights for the chart ──
 function useAccountDailyInsights(accountId) {
-  const token = useAuthStore.getState().accessToken
   const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
   const until = format(new Date(), 'yyyy-MM-dd')
 
