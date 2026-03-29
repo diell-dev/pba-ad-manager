@@ -53,6 +53,44 @@ export function formatDateRange(startDate, endDate) {
   return `${start.toLocaleDateString('en-US', opts)} – ${end.toLocaleDateString('en-US', opts)}`
 }
 
+// ── Date preset mapping (app store → Meta API) ──
+// Returns { metaPreset, since, until } for use in Meta API calls
+import { format } from 'date-fns'
+
+export function getMetaDateParams(datePreset, dateRange) {
+  // Map our preset names to Meta API date_preset values
+  const PRESET_MAP = {
+    today: 'today',
+    yesterday: 'yesterday',
+    last7: 'last_7d',
+    last30: 'last_30d',
+    thisMonth: 'this_month',
+    lastMonth: 'last_month',
+  }
+
+  const metaPreset = PRESET_MAP[datePreset] || 'last_7d'
+
+  // Also provide since/until for APIs that use time_range
+  const since = format(dateRange.start, 'yyyy-MM-dd')
+  const until = format(dateRange.end, 'yyyy-MM-dd')
+
+  return { metaPreset, since, until }
+}
+
+// Returns the display label for the current date preset
+export function getDatePresetLabel(datePreset, dateRange) {
+  const labels = {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    last7: 'Last 7 days',
+    last30: 'Last 30 days',
+    thisMonth: 'This month',
+    lastMonth: 'Last month',
+  }
+  if (datePreset === 'custom') return formatDateRange(dateRange.start, dateRange.end)
+  return labels[datePreset] || 'Last 7 days'
+}
+
 // ── Change indicator ──
 export function getChangeColor(value) {
   if (value > 0) return 'text-neon'

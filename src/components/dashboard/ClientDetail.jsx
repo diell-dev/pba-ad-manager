@@ -5,18 +5,22 @@ import { cn } from '@/utils/cn'
 import MetricCard from '@/components/shared/MetricCard'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { meta } from '@/lib/api'
-import { format, subDays } from 'date-fns'
+import { useAppStore } from '@/stores/appStore'
+import { getMetaDateParams } from '@/lib/formatters'
+import { format } from 'date-fns'
 
 // ── Fetch campaigns with insights for a specific account ──
 function useAccountCampaigns(accountId) {
+  const { datePreset, dateRange } = useAppStore()
+  const { metaPreset } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['accountCampaigns', accountId],
+    queryKey: ['accountCampaigns', accountId, datePreset],
     queryFn: async () => {
       const res = await meta.get(`${accountId}/campaigns`, {
         fields: [
           'id', 'name', 'status', 'objective', 'daily_budget',
-          'insights.date_preset(last_7d){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}',
+          `insights.date_preset(${metaPreset}){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}`,
         ].join(','),
         effective_status: '["ACTIVE","PAUSED"]',
         limit: '50',
@@ -43,14 +47,16 @@ function useAccountCampaigns(accountId) {
 
 // ── Fetch ad sets for a campaign ──
 function useAdSetsForCampaign(campaignId) {
+  const { datePreset, dateRange } = useAppStore()
+  const { metaPreset } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['adSets', campaignId],
+    queryKey: ['adSets', campaignId, datePreset],
     queryFn: async () => {
       const res = await meta.get(`${campaignId}/adsets`, {
         fields: [
           'id', 'name', 'status', 'daily_budget',
-          'insights.date_preset(last_7d){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}',
+          `insights.date_preset(${metaPreset}){spend,impressions,clicks,actions,cost_per_action_type,frequency,reach}`,
         ].join(','),
         limit: '50',
       })
@@ -75,14 +81,16 @@ function useAdSetsForCampaign(campaignId) {
 
 // ── Fetch ads for an ad set ──
 function useAdsForAdSet(adSetId) {
+  const { datePreset, dateRange } = useAppStore()
+  const { metaPreset } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['ads', adSetId],
+    queryKey: ['ads', adSetId, datePreset],
     queryFn: async () => {
       const res = await meta.get(`${adSetId}/ads`, {
         fields: [
           'id', 'name', 'status',
-          'insights.date_preset(last_7d){spend,impressions,clicks,ctr,actions,cost_per_action_type,frequency}',
+          `insights.date_preset(${metaPreset}){spend,impressions,clicks,ctr,actions,cost_per_action_type,frequency}`,
         ].join(','),
         limit: '50',
       })
@@ -107,11 +115,11 @@ function useAdsForAdSet(adSetId) {
 
 // ── Fetch daily insights for the chart ──
 function useAccountDailyInsights(accountId) {
-  const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
-  const until = format(new Date(), 'yyyy-MM-dd')
+  const { datePreset, dateRange } = useAppStore()
+  const { since, until } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['accountDaily', accountId, since, until],
+    queryKey: ['accountDaily', accountId, datePreset, since, until],
     queryFn: async () => {
       const res = await meta.get(`${accountId}/insights`, {
         fields: 'spend,impressions,clicks,actions,frequency,reach',

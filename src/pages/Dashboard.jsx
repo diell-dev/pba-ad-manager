@@ -7,15 +7,15 @@ import ClientDetail from '@/components/dashboard/ClientDetail'
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/stores/appStore'
 import { meta } from '@/lib/api'
-import { format, subDays } from 'date-fns'
+import { getMetaDateParams, getDatePresetLabel } from '@/lib/formatters'
 
 // ── Fetch campaigns + account insights for a single ad account ──
 function useAccountSummary(accountId) {
-  const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
-  const until = format(new Date(), 'yyyy-MM-dd')
+  const { datePreset, dateRange } = useAppStore()
+  const { since, until } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['accountSummary', accountId, since, until],
+    queryKey: ['accountSummary', accountId, datePreset, since, until],
     queryFn: async () => {
       // Fetch campaigns and insights in parallel
       const [campaignsRes, insightsRes] = await Promise.all([
@@ -28,7 +28,7 @@ function useAccountSummary(accountId) {
           fields: 'spend,impressions,clicks,actions,cost_per_action_type,frequency,reach,ctr,cpc',
           time_range: JSON.stringify({ since, until }),
           time_increment: '1',
-          limit: '7',
+          limit: '90',
         }),
       ])
 
@@ -208,7 +208,7 @@ function ClientCard({ account, onClick }) {
 // ── Dashboard Page ──
 export default function Dashboard() {
   const [selectedClient, setSelectedClient] = useState(null)
-  const { accounts } = useAppStore()
+  const { accounts, datePreset, dateRange } = useAppStore()
 
   if (selectedClient) {
     return (
@@ -233,7 +233,7 @@ export default function Dashboard() {
       {/* Summary metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard label="Ad Accounts" value={totalAccounts.toString()} icon={Users} />
-        <MetricCard label="Period" value="Last 7 days" icon={TrendingUp} />
+        <MetricCard label="Period" value={getDatePresetLabel(datePreset, dateRange)} icon={TrendingUp} />
         <MetricCard label="Data Source" value="Meta API" icon={Target} />
         <MetricCard label="Status" value="Live" icon={DollarSign} />
       </div>

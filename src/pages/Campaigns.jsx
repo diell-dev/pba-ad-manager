@@ -5,20 +5,22 @@ import { cn } from '@/utils/cn'
 import StatusDot from '@/components/shared/StatusDot'
 import { useAppStore } from '@/stores/appStore'
 import { meta } from '@/lib/api'
+import { getMetaDateParams } from '@/lib/formatters'
 
 const FILTERS = ['Active', 'Paused', 'All']
 
 // ── Hook to fetch real campaigns from selected account ──
 function useRealCampaigns(statusFilter) {
-  const { selectedAccountId } = useAppStore()
+  const { selectedAccountId, datePreset, dateRange } = useAppStore()
+  const { metaPreset } = getMetaDateParams(datePreset, dateRange)
 
   return useQuery({
-    queryKey: ['campaigns', selectedAccountId, statusFilter],
+    queryKey: ['campaigns', selectedAccountId, statusFilter, datePreset],
     queryFn: async () => {
       const params = {
         fields: [
           'id', 'name', 'status', 'objective', 'daily_budget', 'lifetime_budget',
-          'insights.date_preset(last_7d){spend,impressions,clicks,ctr,cpc,actions,cost_per_action_type,frequency,reach}',
+          `insights.date_preset(${metaPreset}){spend,impressions,clicks,ctr,cpc,actions,cost_per_action_type,frequency,reach}`,
         ].join(','),
         limit: '100',
       }
