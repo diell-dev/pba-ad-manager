@@ -6,13 +6,11 @@ import StatusDot from '@/components/shared/StatusDot'
 import ClientDetail from '@/components/dashboard/ClientDetail'
 import { cn } from '@/utils/cn'
 import { useAppStore } from '@/stores/appStore'
-import { useAuthStore } from '@/stores/authStore'
 import { meta } from '@/lib/api'
 import { format, subDays } from 'date-fns'
 
 // ── Fetch campaigns + account insights for a single ad account ──
 function useAccountSummary(accountId) {
-  const token = useAuthStore.getState().accessToken
   const since = format(subDays(new Date(), 7), 'yyyy-MM-dd')
   const until = format(new Date(), 'yyyy-MM-dd')
 
@@ -83,7 +81,7 @@ function useAccountSummary(accountId) {
         spendTrend: spendTrend.length > 0 ? spendTrend : [0],
       }
     },
-    enabled: !!accountId && !!token,
+    enabled: !!accountId,
     staleTime: 2 * 60 * 1000,
   })
 }
@@ -142,18 +140,16 @@ function MiniSparkline({ data, color = '#00ff85' }) {
 // ── Client Card (real data) ──
 function ClientCard({ account, onClick }) {
   const { data, isLoading } = useAccountSummary(account.id)
-  const hasToken = !!useAuthStore.getState().accessToken
 
-  // If no token (demo mode), show demo data
-  const summary = (!hasToken || !data) ? {
-    totalSpend: Math.random() * 5000 + 500,
-    totalResults: Math.floor(Math.random() * 200) + 20,
-    activeCampaigns: Math.floor(Math.random() * 5) + 1,
-    totalCampaigns: Math.floor(Math.random() * 8) + 2,
-    status: ['ok', 'ok', 'warning', 'critical'][Math.floor(Math.random() * 4)],
-    spendTrend: Array.from({ length: 7 }, () => Math.random() * 100 + 20),
-    avgFrequency: (Math.random() * 3 + 1).toFixed(1),
-  } : data
+  const summary = data || {
+    totalSpend: 0,
+    totalResults: 0,
+    activeCampaigns: 0,
+    totalCampaigns: 0,
+    status: 'ok',
+    spendTrend: [0],
+    avgFrequency: '0',
+  }
 
   const statusColor = summary.status === 'critical' ? '#ef4444' : summary.status === 'warning' ? '#f59e0b' : '#00ff85'
 
@@ -171,7 +167,7 @@ function ClientCard({ account, onClick }) {
             </h3>
           </div>
           <p className="text-xs font-mono text-steel">
-            {isLoading && hasToken ? (
+            {isLoading ? (
               <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Loading...</span>
             ) : (
               `${summary.activeCampaigns || summary.totalCampaigns} active campaign${(summary.activeCampaigns || summary.totalCampaigns) !== 1 ? 's' : ''}`
@@ -185,13 +181,13 @@ function ClientCard({ account, onClick }) {
         <div>
           <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">Spend</div>
           <div className="text-sm font-semibold text-white">
-            {isLoading && hasToken ? '...' : formatMoney(summary.totalSpend)}
+            {isLoading ? '...' : formatMoney(summary.totalSpend)}
           </div>
         </div>
         <div>
           <div className="text-[10px] font-mono uppercase tracking-wider text-steel/60 mb-0.5">Results</div>
           <div className="text-sm font-semibold text-white">
-            {isLoading && hasToken ? '...' : formatNum(summary.totalResults)}
+            {isLoading ? '...' : formatNum(summary.totalResults)}
           </div>
         </div>
         <div>
@@ -201,7 +197,7 @@ function ClientCard({ account, onClick }) {
             parseFloat(summary.avgFrequency) > 4 ? 'text-red-400' :
             parseFloat(summary.avgFrequency) > 3 ? 'text-amber-400' : 'text-neon'
           )}>
-            {isLoading && hasToken ? '...' : summary.avgFrequency}
+            {isLoading ? '...' : summary.avgFrequency}
           </div>
         </div>
       </div>

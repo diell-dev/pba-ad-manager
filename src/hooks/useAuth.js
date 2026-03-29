@@ -43,13 +43,6 @@ export function useAuth() {
     }
   }
 
-  async function loginDemo() {
-    setLoading(true)
-    setError(null)
-    // Demo mode — no real token, just authenticate with mock data
-    setAuthenticated({ name: 'Demo User' }, null)
-  }
-
   async function logout() {
     try {
       await auth.logout()
@@ -74,17 +67,9 @@ export function useAuth() {
       }
     } catch (err) {
       console.warn('Could not load ad accounts:', err.message)
-      // Set demo accounts for development
-      const demoAccounts = [
-        { id: 'act_demo_1', name: 'NuHealth', currency: 'USD', timezone: 'US/Eastern' },
-        { id: 'act_demo_2', name: 'Acme Corp', currency: 'USD', timezone: 'US/Eastern' },
-        { id: 'act_demo_3', name: 'Kosovo Travel', currency: 'EUR', timezone: 'Europe/Belgrade' },
-        { id: 'act_demo_4', name: 'Prishtina Eats', currency: 'EUR', timezone: 'Europe/Belgrade' },
-      ]
-      setAccounts(demoAccounts)
-      if (!selectedAccountId) selectAccount(demoAccounts[0].id)
+      setAccounts([])
     }
   }
 
-  return { isAuthenticated, isLoading, user, error, login, loginDemo, logout }
+  return { isAuthenticated, isLoading, user, error, login, logout }
 }

@@ -4,7 +4,6 @@ import { Search, Download, Pause, Play, ChevronRight, Loader2 } from 'lucide-rea
 import { cn } from '@/utils/cn'
 import StatusDot from '@/components/shared/StatusDot'
 import { useAppStore } from '@/stores/appStore'
-import { useAuthStore } from '@/stores/authStore'
 import { meta } from '@/lib/api'
 
 const FILTERS = ['Active', 'Paused', 'All']
@@ -12,7 +11,6 @@ const FILTERS = ['Active', 'Paused', 'All']
 // ── Hook to fetch real campaigns from selected account ──
 function useRealCampaigns(statusFilter) {
   const { selectedAccountId } = useAppStore()
-  const token = useAuthStore.getState().accessToken
 
   return useQuery({
     queryKey: ['campaigns', selectedAccountId, statusFilter],
@@ -92,32 +90,17 @@ function useRealCampaigns(statusFilter) {
         }
       })
     },
-    enabled: !!selectedAccountId && !!token,
+    enabled: !!selectedAccountId,
     staleTime: 60 * 1000,
   })
 }
 
-// Demo campaigns for when there's no token
-const DEMO_CAMPAIGNS = [
-  { id: 'd1', name: 'Weight Loss — Conversions', status: 'ACTIVE', objective: 'OUTCOME_LEADS', budget: '$100/day', spend: '$2,340.00', results: '89 leads', cpr: '$26.29', roas: '3.2x', frequency: '2.1' },
-  { id: 'd2', name: 'HRT — Awareness', status: 'ACTIVE', objective: 'OUTCOME_AWARENESS', budget: '$50/day', spend: '$890.00', results: '45K reach', cpr: '$0.02', roas: '—', frequency: '1.8' },
-  { id: 'd3', name: 'Q1 Promo — Sales', status: 'ACTIVE', objective: 'OUTCOME_SALES', budget: '$75/day', spend: '$1,850.00', results: '34 purchases', cpr: '$54.41', roas: '2.8x', frequency: '3.4' },
-  { id: 'd4', name: 'Summer Push — Traffic', status: 'PAUSED', objective: 'OUTCOME_TRAFFIC', budget: '$40/day', spend: '$920.00', results: '2.1K clicks', cpr: '$0.44', roas: '1.5x', frequency: '2.9' },
-  { id: 'd5', name: 'Weekend Orders — Conversions', status: 'ACTIVE', objective: 'OUTCOME_LEADS', budget: '$60/day', spend: '$1,400.00', results: '67 orders', cpr: '$20.90', roas: '4.1x', frequency: '5.2' },
-]
-
 export default function Campaigns() {
   const [activeFilter, setActiveFilter] = useState('Active')
   const [search, setSearch] = useState('')
-  const hasToken = !!useAuthStore.getState().accessToken
+  const { data: campaigns, isLoading, isError } = useRealCampaigns(activeFilter)
 
-  const { data: realCampaigns, isLoading, isError } = useRealCampaigns(activeFilter)
-
-  // Use real data if available, otherwise demo
-  const allCampaigns = hasToken && realCampaigns ? realCampaigns : DEMO_CAMPAIGNS
-
-  const filtered = allCampaigns.filter((c) => {
-    if (!hasToken && activeFilter !== 'All' && c.status !== activeFilter.toUpperCase()) return false
+  const filtered = (campaigns || []).filter((c) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
@@ -128,9 +111,7 @@ export default function Campaigns() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Campaigns</h2>
-          <p className="text-sm text-steel mt-1">
-            {hasToken ? 'Live campaigns from your Meta ad account' : 'Demo campaigns — log in with your credentials for real data'}
-          </p>
+          <p className="text-sm text-steel mt-1">Live campaigns from your Meta ad account</p>
         </div>
         <button className="flex items-center gap-2 px-3 py-2 bg-navy-light/60 border border-border-glow rounded-lg text-sm text-steel hover:text-white hover:border-border-hover transition-colors">
           <Download size={14} />
@@ -168,7 +149,7 @@ export default function Campaigns() {
       </div>
 
       {/* Loading state */}
-      {isLoading && hasToken && (
+      {isLoading && (
         <div className="flex items-center justify-center py-12 text-steel">
           <Loader2 size={20} className="animate-spin mr-2" />
           Loading campaigns from Meta...
@@ -176,14 +157,14 @@ export default function Campaigns() {
       )}
 
       {/* Error state */}
-      {isError && hasToken && (
+      {isError && (
         <div className="px-5 py-8 text-center text-amber-400 text-sm bg-amber-400/5 border border-amber-400/10 rounded-xl">
           Could not load campaigns. The API might be rate-limited or the token expired. Showing cached data if available.
         </div>
       )}
 
       {/* Campaign table */}
-      {(!isLoading || !hasToken) && (
+      {!isLoading && (
         <div className="bg-navy-light/40 border border-border-glow rounded-xl overflow-hidden">
           {/* Table header */}
           <div className="grid grid-cols-[1fr_100px_100px_100px_100px_80px_80px_40px] gap-4 px-5 py-3 border-b border-border-glow text-[10px] font-mono uppercase tracking-wider text-steel/60">

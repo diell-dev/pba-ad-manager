@@ -4,13 +4,11 @@ import { ArrowLeft, ChevronRight, ChevronDown, Play, Pause, DollarSign, MousePoi
 import { cn } from '@/utils/cn'
 import MetricCard from '@/components/shared/MetricCard'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { useAuthStore } from '@/stores/authStore'
 import { meta } from '@/lib/api'
 import { format, subDays } from 'date-fns'
 
 // ── Fetch campaigns with insights for a specific account ──
 function useAccountCampaigns(accountId) {
-  const token = useAuthStore.getState().accessToken
 
   return useQuery({
     queryKey: ['accountCampaigns', accountId],
@@ -38,14 +36,13 @@ function useAccountCampaigns(accountId) {
         }
       })
     },
-    enabled: !!accountId && !!token,
+    enabled: !!accountId,
     staleTime: 2 * 60 * 1000,
   })
 }
 
 // ── Fetch ad sets for a campaign ──
 function useAdSetsForCampaign(campaignId) {
-  const token = useAuthStore.getState().accessToken
 
   return useQuery({
     queryKey: ['adSets', campaignId],
@@ -71,14 +68,13 @@ function useAdSetsForCampaign(campaignId) {
         }
       })
     },
-    enabled: !!campaignId && !!token,
+    enabled: !!campaignId,
     staleTime: 2 * 60 * 1000,
   })
 }
 
 // ── Fetch ads for an ad set ──
 function useAdsForAdSet(adSetId) {
-  const token = useAuthStore.getState().accessToken
 
   return useQuery({
     queryKey: ['ads', adSetId],
@@ -104,7 +100,7 @@ function useAdsForAdSet(adSetId) {
         }
       })
     },
-    enabled: !!adSetId && !!token,
+    enabled: !!adSetId,
     staleTime: 2 * 60 * 1000,
   })
 }
@@ -131,7 +127,7 @@ function useAccountDailyInsights(accountId) {
         impressions: parseInt(day.impressions || 0, 10),
       }))
     },
-    enabled: !!accountId && !!token,
+    enabled: !!accountId,
     staleTime: 2 * 60 * 1000,
   })
 }
@@ -161,18 +157,6 @@ function extractCPRString(ins) {
   }
   return '—'
 }
-
-// ── Demo data ──
-const DEMO_CHART = Array.from({ length: 7 }, (_, i) => ({
-  date: format(subDays(new Date(), 7 - i), 'MMM dd'),
-  spend: Math.floor(Math.random() * 200) + 100,
-  clicks: Math.floor(Math.random() * 100) + 20,
-}))
-
-const DEMO_CAMPAIGNS = [
-  { id: '1', name: 'Weight Loss — Conversions', status: 'ACTIVE', spend: '$2,340.00', results: '89 leads', cpr: '$26.29', frequency: '2.1' },
-  { id: '2', name: 'HRT — Awareness', status: 'ACTIVE', spend: '$890.00', results: '45K reach', cpr: '$0.02', frequency: '1.8' },
-]
 
 // ── Ad Row ──
 function AdRow({ ad }) {
@@ -308,12 +292,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 // ── Main ClientDetail Component ──
 export default function ClientDetail({ client, onBack }) {
-  const hasToken = !!useAuthStore.getState().accessToken
-  const { data: campaigns, isLoading: campaignsLoading } = useAccountCampaigns(hasToken ? client.id : null)
-  const { data: chartData, isLoading: chartLoading } = useAccountDailyInsights(hasToken ? client.id : null)
+  const { data: campaigns, isLoading: campaignsLoading } = useAccountCampaigns(client.id)
+  const { data: chartData, isLoading: chartLoading } = useAccountDailyInsights(client.id)
 
-  const displayCampaigns = hasToken && campaigns ? campaigns : DEMO_CAMPAIGNS
-  const displayChart = hasToken && chartData?.length > 0 ? chartData : DEMO_CHART
+  const displayCampaigns = campaigns || []
+  const displayChart = chartData?.length > 0 ? chartData : []
 
   const summary = client.summary || {}
 
@@ -326,9 +309,7 @@ export default function ClientDetail({ client, onBack }) {
         </button>
         <div>
           <h2 className="text-2xl font-bold text-white">{client.name}</h2>
-          <p className="text-sm text-steel">
-            {hasToken ? 'Live data from Meta Marketing API' : 'Demo data — log in for real metrics'}
-          </p>
+          <p className="text-sm text-steel">Live data from Meta Marketing API</p>
         </div>
       </div>
 
@@ -343,7 +324,7 @@ export default function ClientDetail({ client, onBack }) {
       {/* Chart */}
       <div className="bg-navy-light/40 border border-border-glow rounded-xl p-5">
         <h3 className="text-sm font-mono uppercase tracking-wider text-steel mb-4">Daily Performance (Last 7 Days)</h3>
-        {chartLoading && hasToken ? (
+        {chartLoading ? (
           <div className="flex items-center justify-center py-12 text-steel text-sm">
             <Loader2 size={16} className="animate-spin mr-2" /> Loading chart...
           </div>
@@ -377,7 +358,7 @@ export default function ClientDetail({ client, onBack }) {
           <span className="text-right">CPR</span>
           <span className="text-right">Freq</span>
         </div>
-        {campaignsLoading && hasToken ? (
+        {campaignsLoading ? (
           <div className="px-5 py-8 text-center text-steel text-sm flex items-center justify-center gap-2">
             <Loader2 size={16} className="animate-spin" /> Loading campaigns...
           </div>
