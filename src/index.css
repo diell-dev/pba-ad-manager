@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+/*
+ * FONT: Using Outfit (free) as stand-in for Maison Neue.
+ * To use your Maison Neue files, add @font-face declarations
+ * and replace 'Outfit' → 'Maison Neue', 'DM Mono' → 'Maison Neue Mono'
+ */
+
+/* ── PBA Brand Theme ── */
+@theme {
+  --color-navy: #05093d;
+  --color-navy-light: #0a0e4a;
+  --color-navy-elevated: #101566;
+  --color-electric: #0d06ff;
+  --color-neon: #00ff85;
+  --color-steel: #98b9ce;
+  --color-surface: #0a0e4a;
+  --color-border-glow: rgba(0, 255, 133, 0.12);
+  --color-border-hover: rgba(0, 255, 133, 0.25);
+
+  --font-sans: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+}
+
+/* ── Base Styles ── */
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-navy);
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar (dark themed) ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(152, 185, 206, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(152, 185, 206, 0.4);
+}
+
+/* ── Grid Overlay (PBA signature) ── */
+.pba-grid-overlay {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 255, 133, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 133, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Neon Glow Effects ── */
+.glow-neon {
+  box-shadow: 0 0 20px rgba(0, 255, 133, 0.15), 0 0 60px rgba(0, 255, 133, 0.05);
+}
+
+.glow-neon-text {
+  text-shadow: 0 0 20px rgba(0, 255, 133, 0.3);
+}
+
+/* ── Pulse animation for critical status ── */
+@keyframes pulse-critical {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+.pulse-critical {
+  animation: pulse-critical 2s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+}
+.pulse-warning {
+  animation: pulse-warning 2s ease-in-out infinite;
+}
+
+/* ── Sparkline draw-in ── */
+@keyframes draw-line {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Number count-up animation helper ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out forwards;
+}
+
+/* ── Skeleton shimmer ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-navy-light) 25%, var(--color-navy-elevated) 50%, var(--color-navy-light) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
