@@ -1,4 +1,5 @@
 // ── Fetch wrapper for Netlify Functions ──
+import { useAuthStore } from '@/stores/authStore'
 
 const BASE = '/.netlify/functions'
 
@@ -11,21 +12,13 @@ class ApiError extends Error {
 }
 
 async function request(endpoint, options = {}) {
-  const { method = 'GET', body, params } = options
+  const { method = 'POST', body } = options
 
-  let url = `${BASE}/${endpoint}`
-  if (params) {
-    const searchParams = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) searchParams.set(k, v)
-    })
-    url += `?${searchParams.toString()}`
-  }
+  const url = `${BASE}/${endpoint}`
 
   const fetchOptions = {
     method,
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
   }
 
   if (body) fetchOptions.body = JSON.stringify(body)
@@ -40,33 +33,52 @@ async function request(endpoint, options = {}) {
   return res.json()
 }
 
+// Helper to get the current access token from the auth store
+function getToken() {
+  return useAuthStore.getState().accessToken
+}
+
 // ── Auth ──
 export const auth = {
-  check: () => request('auth', { method: 'POST', body: { action: 'check' } }),
+  check: () => request('auth', { body: { action: 'check' } }),
   login: (username, password) =>
-    request('auth', { method: 'POST', body: { action: 'login', username, password } }),
-  logout: () => request('auth', { method: 'POST', body: { action: 'logout' } }),
+    request('auth', { body: { action: 'login', username, password } }),
+  logout: () => request('auth', { body: { action: 'logout' } }),
 }
 
 // ── Meta API proxy ──
+// All requests go as POST to the serverless function with token + endpoint in body
 export const meta = {
   get: (path, params = {}) =>
-    request('meta-api', { params: { path, ...params } }),
-  post: (path, body = {}) =>
-    request('meta-api', { method: 'POST', body: { path, ...body } }),
+    request('meta-api', {
+      body: {
+        accessToken: getToken(),
+        endpoint: `/${path}`,
+        method: 'GET',
+        params,
+      },
+    }),
+  post: (path, params = {}) =>
+    request('meta-api', {
+      body: {
+        accessToken: getToken(),
+        endpoint: `/${path}`,
+        method: 'POST',
+        params,
+      },
+    }),
 }
 
 // ── AI (Claude) ──
 export const ai = {
   edit: (prompt, context) =>
-    request('ai-edit', { method: 'POST', body: { prompt, context } }),
+    request('ai-edit', { body: { prompt, context } }),
   parseStrategy: (documentText) =>
-    request('ai-parse-strategy', { method: 'POST', body: { documentText } }),
+    request('ai-parse-strategy', { body: { documentText } }),
 }
 
 // ── High-level Meta data fetchers ──
 export const metaData = {
-  // Get all ad accounts the user has access to
   getAdAccounts: async () => {
     const res = await meta.get('me/adaccounts', {
       fields: 'id,name,currency,timezone_name,account_status',
@@ -75,7 +87,6 @@ export const metaData = {
     return res.data || []
   },
 
-  // Get campaigns for an ad account within a date range
   getCampaigns: async (accountId, dateRange, statusFilter = 'active') => {
     const params = {
       fields: [
@@ -96,7 +107,6 @@ export const metaData = {
     return res.data || []
   },
 
-  // Get ad sets for a campaign
   getAdSets: async (campaignId) => {
     const res = await meta.get(`${campaignId}/adsets`, {
       fields: [
@@ -109,7 +119,6 @@ export const metaData = {
     return res.data || []
   },
 
-  // Get ads for an ad set
   getAds: async (adSetId) => {
     const res = await meta.get(`${adSetId}/ads`, {
       fields: [
@@ -121,7 +130,6 @@ export const metaData = {
     return res.data || []
   },
 
-  // Get account-level insights with daily breakdown (for sparklines)
   getAccountInsights: async (accountId, since, until) => {
     const res = await meta.get(`${accountId}/insights`, {
       fields: 'spend,impressions,clicks,actions,cost_per_action_type,frequency,reach,ctr,cpc',
@@ -132,7 +140,6 @@ export const metaData = {
     return res.data || []
   },
 
-  // Get campaign insights with daily breakdown
   getCampaignInsights: async (campaignId, since, until) => {
     const res = await meta.get(`${campaignId}/insights`, {
       fields: 'spend,impressions,clicks,actions,cost_per_action_type,frequency,reach,ctr,cpc',

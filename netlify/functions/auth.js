@@ -43,8 +43,27 @@ export const handler = async (event) => {
       };
     }
 
-    const { username, password } = body;
+    const { action, username, password } = body;
 
+    // ── Check session (stateless — always returns not authenticated) ──
+    if (action === 'check') {
+      return {
+        statusCode: 401,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'No active session' })
+      };
+    }
+
+    // ── Logout (no-op, client handles token removal) ──
+    if (action === 'logout') {
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ message: 'Logged out' })
+      };
+    }
+
+    // ── Login ──
     if (!username || !password) {
       return {
         statusCode: 400,
@@ -68,7 +87,7 @@ export const handler = async (event) => {
       return {
         statusCode: 500,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Server configuration error' })
+        body: JSON.stringify({ error: 'Server configuration error: ENCRYPTED_FB_TOKEN not set' })
       };
     }
 
@@ -79,7 +98,7 @@ export const handler = async (event) => {
       accessToken = decrypted.toString(CryptoJS.enc.Utf8);
 
       // Validate token format — Facebook tokens start with "EA"
-      if (!accessToken.startsWith('EA')) {
+      if (!accessToken || !accessToken.startsWith('EA')) {
         throw new Error('Invalid token format after decryption');
       }
     } catch (e) {
@@ -95,6 +114,7 @@ export const handler = async (event) => {
       headers: corsHeaders,
       body: JSON.stringify({
         accessToken,
+        user: { name: username },
         message: 'Token retrieved successfully. Store in memory only.'
       })
     };

@@ -7,7 +7,7 @@ export function useAuth() {
   const { isAuthenticated, isLoading, user, error, setAuthenticated, setLoading, setError, logout: storeLogout } = useAuthStore()
   const { setAccounts, selectAccount, selectedAccountId } = useAppStore()
 
-  // Check session on mount
+  // Check session on mount — stateless, so this just ends loading state
   useEffect(() => {
     checkSession()
   }, [])
@@ -23,17 +23,21 @@ export function useAuth() {
     setLoading(true)
     try {
       const data = await auth.check()
-      setAuthenticated(data.user || { name: 'Admin' })
+      // If somehow we get a valid response, authenticate
+      setAuthenticated(data.user || { name: 'Admin' }, data.accessToken)
     } catch {
+      // Expected — stateless auth means no session to restore
       setLoading(false)
     }
   }
 
   async function login(username, password) {
     setLoading(true)
+    setError(null)
     try {
       const data = await auth.login(username, password)
-      setAuthenticated(data.user || { name: username })
+      // Store the access token in memory via the auth store
+      setAuthenticated(data.user || { name: username }, data.accessToken)
     } catch (err) {
       setError(err.message || 'Login failed')
     }
@@ -58,7 +62,6 @@ export function useAuth() {
         status: a.account_status,
       }))
       setAccounts(formatted)
-      // Auto-select first account if none selected
       if (!selectedAccountId && formatted.length > 0) {
         selectAccount(formatted[0].id)
       }
