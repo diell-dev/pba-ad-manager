@@ -99,8 +99,9 @@ ANALYSIS CAPABILITIES (when user asks to "show me" or "find" or "analyze"):
 - You can analyze the campaign data in context to find patterns
 - Compare metrics across campaigns (spend, CTR, CPC, frequency, ROAS, etc.)
 - Identify underperformers, high-frequency fatigue, budget waste
-- For analysis-only requests, return actions: [] and put your analysis in the interpretation field
+- For analysis-only requests, return actions: [] and put your FULL analysis in the "interpretation" field as a single string
 - You CAN suggest actions based on analysis — include them with clear descriptions
+- IMPORTANT: Put ALL text into the "interpretation" field. Do NOT add text outside the JSON object.
 
 CONTEXT DATA:
 ${JSON.stringify(context || {}, null, 2)}
@@ -131,7 +132,7 @@ RESPONSE FORMAT (strict JSON only):
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: systemPrompt,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -147,13 +148,23 @@ RESPONSE FORMAT (strict JSON only):
     let aiResponse = data.content?.[0]?.text || '{}'
 
     // Strip markdown code fences if present
-    aiResponse = aiResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    aiResponse = aiResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
 
     let actionPlan
     try {
       actionPlan = JSON.parse(aiResponse)
     } catch {
-      actionPlan = { interpretation: aiResponse, actions: [], warnings: ['Could not parse structured response'] }
+      // Try to extract JSON object from response (AI sometimes adds text after JSON)
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        try {
+          actionPlan = JSON.parse(jsonMatch[0])
+        } catch {
+          actionPlan = { interpretation: aiResponse, actions: [], warnings: [] }
+        }
+      } else {
+        actionPlan = { interpretation: aiResponse, actions: [], warnings: [] }
+      }
     }
 
     return {
