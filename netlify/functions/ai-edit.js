@@ -89,7 +89,10 @@ Respond with ONLY valid JSON in this format:
     }
 
     const data = await response.json()
-    const aiResponse = data.content?.[0]?.text || '{}'
+    let aiResponse = data.content?.[0]?.text || '{}'
+
+    // Strip markdown code fences if present (```json ... ```)
+    aiResponse = aiResponse.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
 
     // Try to parse the AI response as JSON
     let actionPlan

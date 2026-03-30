@@ -16,11 +16,7 @@ function ActionPlan({ plan }) {
   if (!plan) return null
 
   return (
-    <div className="space-y-3">
-      {plan.interpretation && (
-        <p className="text-sm text-steel">{plan.interpretation}</p>
-      )}
-
+    <div className="space-y-3 mt-3">
       {plan.actions?.length > 0 && (
         <div className="space-y-2">
           {plan.actions.map((action, i) => (
