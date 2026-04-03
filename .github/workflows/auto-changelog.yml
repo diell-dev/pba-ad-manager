@@ -1,0 +1,52 @@
+name: Auto Changelog
+on:
+  push:
+    branches: [main, master]
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Update CHANGELOG
+        run: |
+          HASH=$(git rev-parse --short HEAD)
+          MSG=$(git log -1 --pretty=format:"%s")
+          AUTH=$(git log -1 --pretty=format:"%an")
+          DT=$(date -u +"%Y-%m-%d %H:%M UTC")
+          BR=$(git rev-parse --abbrev-ref HEAD)
+          TYPE=update
+          echo "$MSG" | grep -qi merge && TYPE=merge
+          echo "$MSG" | grep -qi fix && TYPE=fix
+          echo "$MSG" | grep -qi "feat\|add\|new" && TYPE=feature
+          STATS=$(git diff --shortstat HEAD~1 HEAD 2>/dev/null || echo initial)
+          ENTRY="## [$HASH] - $DT
+- **Type:** $TYPE | **Branch:** $BR
+- **Author:** $AUTH
+- **Message:** $MSG
+- **Changes:** $STATS
+"
+          if [ ! -f CHANGELOG.md ]; then
+            printf "# Changelog
+
+%b
+" "$ENTRY" > CHANGELOG.md
+          else
+            TMP=$(mktemp)
+            head -2 CHANGELOG.md > "$TMP"
+            printf "
+%b
+" "$ENTRY" >> "$TMP"
+            tail -n +3 CHANGELOG.md >> "$TMP"
+            mv "$TMP" CHANGELOG.md
+          fi
+      - name: Push
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "docs: update changelog [skip ci]"
+          git push
